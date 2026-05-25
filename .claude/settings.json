@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "extraKnownMarketplaces": {
+    "RelationalAI": {
+      "source": {
+        "source": "github",
+        "repo": "RelationalAI/rai-agent-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "rai@RelationalAI": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(snow sql*)",
+      "Bash(snow connection test*)",
+      "Bash(snow connection list*)",
+      "Bash(snow connection set-default*)",
+      "Bash(snow --version*)",
+      "Bash(snow notebook execute*)",
+      "Bash(snow notebook create*)",
+      "Bash(snow stage list*)",
+      "Bash(snow stage describe*)",
+      "Bash(snow stage create*)",
+      "Bash(snow stage copy*)",
+      "Bash(snow object list*)",
+      "Bash(snow object describe*)",
+      "Bash(snow git list*)",
+
+      "Bash(rai *)",
+      "Bash(.venv/bin/rai *)",
+
+      "Bash(uv venv*)",
+      "Bash(uv add*)",
+      "Bash(uv remove*)",
+      "Bash(uv lock*)",
+      "Bash(uv sync*)",
+      "Bash(uv run*)",
+      "Bash(uv tool list*)",
+      "Bash(uv tool install*)",
+      "Bash(uv tool run*)",
+      "Bash(uv pip list*)",
+      "Bash(uv pip show*)",
+      "Bash(uv pip install*)",
+      "Bash(uv pip freeze*)",
+      "Bash(uv python list*)",
+      "Bash(uv python pin*)",
+      "Bash(uv python install*)",
+      "Bash(uv --version*)",
+
+      "Bash(.venv/bin/python *)",
+      "Bash(.venv/bin/python3 *)",
+      "Bash(.venv/bin/pip *)",
+      "Bash(.venv/bin/jupyter *)",
+      "Bash(.venv/bin/papermill *)",
+      "Bash(.venv/bin/pytest*)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(python3.13 *)",
+
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git restore*)",
+      "Bash(git stash*)",
+      "Bash(git config --get*)",
+
+      "Bash(ls *)",
+      "Bash(ls)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "Bash(find . *)",
+      "Bash(find ./*)",
+      "Bash(rg *)",
+      "Bash(jq *)",
+      "Bash(awk *)",
+      "Bash(sed *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(tr *)",
+      "Bash(cut *)",
+      "Bash(echo *)",
+      "Bash(pwd)",
+      "Bash(date*)",
+      "Bash(env)",
+      "Bash(which *)",
+      "Bash(whoami)",
+
+      "Bash(mkdir *)",
+      "Bash(touch *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(diff *)",
+
+      "Bash(curl -s https://docs.relational.ai/*)",
+      "Bash(curl -s https://raw.githubusercontent.com/RelationalAI/*)",
+      "Bash(curl -s -o*)",
+
+      "Read(//Users/piotrkraus/rai-repos/**)",
+      "Read(//Users/piotrkraus/.snowflake/connections.toml)",
+      "Read(//Users/piotrkraus/rai-repos/PyRel/**)",
+      "Write(//Users/piotrkraus/rai-repos/**)",
+      "Edit(//Users/piotrkraus/rai-repos/**)",
+      "Glob(//Users/piotrkraus/rai-repos/**)",
+      "Grep(//Users/piotrkraus/rai-repos/**)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(git checkout --force*)",
+      "Bash(git clean -fd*)",
+      "Bash(git filter-branch*)",
+      "Bash(git rebase --root*)",
+
+      "Bash(*DROP DATABASE*)",
+      "Bash(*DROP SCHEMA*)",
+      "Bash(*TRUNCATE TABLE*)",
+      "Bash(*DELETE FROM*)",
+      "Bash(*ALTER USER*)",
+      "Bash(*GRANT OWNERSHIP*)",
+      "Bash(*REVOKE*)",
+
+      "Bash(.venv/bin/python -m agent.deploy teardown*)",
+      "Bash(python -m agent.deploy teardown*)",
+
+      "Bash(snow connection add*)",
+      "Bash(snow connection delete*)",
+      "Bash(snow stage remove*)",
+      "Bash(snow notebook drop*)",
+      "Bash(snow object drop*)",
+
+      "Bash(rai engines suspend*)",
+      "Bash(rai engines delete*)",
+
+      "Bash(curl http*)",
+      "Bash(wget *)",
+
+      "Read(//Users/piotrkraus/.ssh/**)",
+      "Read(//Users/piotrkraus/.aws/**)",
+      "Read(//Users/piotrkraus/.config/gh/**)"
+    ]
+  }
+}
