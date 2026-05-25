@@ -128,16 +128,22 @@ over your training data.
 ## Environment is pre-configured for autonomous runs
 
 [.claude/settings.json](.claude/settings.json) pre-allows the commands you
-need (`snow sql`, `snow connection`, `snow notebook`, `uv`, `.venv/bin/python`,
-`.venv/bin/rai`, `.venv/bin/jupyter`, read-only git, common file utilities)
-and pre-accepts file edits inside this repo. You should be able to run for an
-hour without an interrupt during normal phase execution.
+need (`snow sql` scoped to `--role RAI_DEMO_*` for writes, `snow connection`,
+`snow notebook`, `snow stage`, `uv`, `.venv/bin/python`, `.venv/bin/rai`,
+`.venv/bin/jupyter`, git read + commit + plain push, shell scripts under
+`data/`, `rai_code/`, `agent/`, and common file utilities) and pre-accepts
+file edits inside this repo. You should be able to run for an hour without
+an interrupt during normal phase execution.
 
 **Things that will still ask** (intentionally):
-- `git push`, `git reset --hard`, `git checkout --force`
+- `git push --force` (any flavour), `git push --delete`, `git reset --hard`,
+  `git checkout --force`. A plain `git push` to the existing upstream is allowed.
 - `rm -rf` of anything
 - `agent/deploy.py teardown`
-- Any SQL that contains `DROP DATABASE`, `TRUNCATE`, `DELETE FROM` of source data
+- Any SQL that contains `DROP DATABASE`, `DROP SCHEMA`, `TRUNCATE`,
+  `DELETE FROM`, or role-elevation patterns (`USE ROLE ACCOUNTADMIN`,
+  `--role ACCOUNTADMIN`, etc.) - see the deny list in
+  [.claude/settings.json](.claude/settings.json) for the exhaustive set
 
 If something interrupts you that shouldn't, log it in `BRIEF.md` under
 `### Autonomy issues` and continue - don't relitigate it with the user.
@@ -152,10 +158,23 @@ If something interrupts you that shouldn't, log it in `BRIEF.md` under
   the "Snowflake security harness" section below for the full model.
 - Native App: RelationalAI is installed on this account
 - PyRel auto-discovers credentials from `~/.snowflake/connections.toml` - no `raiconfig.yaml` needed
-- Engine sizing convention from the reference demos:
-  - Logic engine: `<domain>_logic_l` at `HIGHMEM_X64_L` (rules + graph + heuristic)
-  - Prescriptive engine: `<domain>_prescriptive_m` at `HIGHMEM_X64_M` (LP / MIP)
-  - Both are **named** engines so they persist across runs
+- Engine sizing:
+  - **Start small during build.** Both engines default to `HIGHMEM_X64_XS`
+    while the agent is iterating - dev work is mostly the agent thinking,
+    not the engine computing, and idle time on a large engine burns
+    credits for nothing. Most Phase 4 queries run fine on XS.
+  - Logic engine name: `<domain>_logic_xs` (rules + graph + heuristic)
+  - Prescriptive engine name: `<domain>_prescriptive_xs` (LP / MIP)
+  - **Size up only when measured.** If a query times out or `/rai-health`
+    reports memory pressure, bump to `S`. The reference demos ended up at
+    `L` (logic) and `M` (prescriptive) for warm showtime performance with
+    a 47-flight MIP - that's a final tune, not a starting point. Resize
+    via `.venv/bin/rai reasoners alter <name> --size HIGHMEM_X64_S`.
+  - The Phase 8 `prep_demo.py` gate records the resize decision in
+    `BRIEF.md` so the next session knows why the engine is bigger.
+  - Both are **named** engines so they persist across runs. Set
+    auto-suspend short (5 min) so idle time doesn't accumulate cost:
+    `.venv/bin/rai reasoners alter <name> --auto-suspend-mins 5`.
 
 The exact `_build_config()` pattern that works in both local Python AND inside
 a Snowsight notebook is in `supply_chain_demo/rai_code/manual/supply_chain.py`
@@ -273,6 +292,61 @@ You will create `.venv/` early in Phase 2. Don't put it off.
 You will populate the empty directories as you move through phases. Do not
 create files outside this shape without a reason - the reference demos
 followed it strictly and it pays off in Phase 8 when you wire `prep_demo.py`.
+
+## Definition of done (the non-negotiable rule)
+
+A phase is not done until the artifact it produces **executes end-to-end
+without errors against the live Snowflake demo DB**.
+
+Execution is mostly local Python (your `.venv`, your machine) talking to
+the live Snowflake account where the data lives - PyRel reads from
+`PK_<DOMAIN>` over the network via the `rai` connection profile + demo
+role. So "end-to-end" means the queries actually fire against Snowflake,
+the engines actually execute, the agent actually answers - not mocked,
+not dry-run, not unit-tested-in-isolation. Real data, real engines, real
+answers. The exception is Phase 6, where the notebook itself executes
+inside Snowsight (Snowflake-side).
+
+| Phase | Where does the test run | What runs against Snowflake |
+|---|---|---|
+| **Phase 4** | Local Python | `demo_queries.py main()` fires every query against the live demo DB; engines compute server-side; DataFrames return to local |
+| **Phase 5** | Local Jupyter | Same as Phase 4, wrapped in nbconvert. Cells green, figures render |
+| **Phase 6** | Snowsight (in Snowflake) | The notebook executes server-side via `snow notebook execute`. Then manual re-run in the Snowsight UI to catch silent chart-render failures |
+| **Phase 7** | Local CLI (chat round-trip) | `agent.deploy chat "..."` hits the deployed Cortex agent in Snowsight; the agent executes the PyRel query server-side and returns text + table |
+| **Phase 8** | Local Python (the gate) | `prep_demo.py` is local but every check it runs hits Snowflake - SQL validation, engine resume, demo_queries.py, agent chat, notebook re-execute |
+
+**Per-phase exit:**
+
+- **Phase 4** smoke test (`.venv/bin/python rai_code/manual/demo_queries.py`)
+  runs all queries top-to-bottom green. No tracebacks. No silent empty
+  DataFrames where the anchored numbers say there should be rows.
+- **Phase 5** local Jupyter notebook executes top-to-bottom via
+  `.venv/bin/jupyter nbconvert --execute --to notebook --inplace`. Every
+  cell green. Every figure renders.
+- **Phase 6** Snowsight notebook executes top-to-bottom via
+  `snow notebook execute <DB>.NOTEBOOKS.<DOMAIN>_DEMO`. Then **open it in
+  the Snowsight UI and re-run all cells** (the CLI sometimes reports
+  success while a chart silently fails to render).
+- **Phase 7** Cortex agent answers each demo question via
+  `.venv/bin/python -m agent.deploy chat "..."` correctly. Every question.
+- **Phase 8** `prep_demo.py` finishes with all checks GREEN, cold start
+  inside the budget.
+
+If any of the above is yellow or red, **iterate until it's green**. Don't
+move to the next phase. Don't paper over a failure with a comment. Don't
+"come back to it later". The reference demos went through several
+iterations to land green; yours will too.
+
+When a notebook cell fails in Snowsight but works locally, the culprit is
+usually one of: missing change tracking on a table, a stale stage upload
+(re-run the `snow stage copy` step), the `_build_config()` not detecting
+the Snowsight session (Snowsight needs `ConfigFromActiveSession`, local
+needs `create_config()` - your Phase 3 `_build_config()` must handle both),
+or a Plotly figure width/height that Jupyter accepts but Snowsight
+rejects.
+
+Document any failure you fix in `BRIEF.md` under "Design decisions" so
+the next session inherits the gotcha.
 
 ## Style and tone
 

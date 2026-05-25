@@ -37,6 +37,12 @@ SQL demo). Land on the question shapes that justify each reasoner.
 - Each question is tagged with its reasoner family.
 - Each question has a one-sentence "why this is a RelationalAI question, not
   a SQL question" justification.
+- **Each question has a hand-designed "expected answer".** Not a placeholder.
+  A concrete shape with concrete named entities: "KLG handler shows 7 TOBT
+  violations, AGS shows 5, DNATA 3, MENZIES 2" - not "some handlers will
+  show violations". The expected answer is the talk-track moment. If you
+  can't write it now, you don't understand the demo yet - iterate on the
+  question.
 - At least one question per reasoner family the user picked in intake Q4.
 - The set as a whole tells a coherent narrative (Act 1 sets up the problem,
   Act 2 reveals a hidden dependency, Act 3 ranks risk, Act 4 prescribes,
@@ -46,6 +52,10 @@ SQL demo). Land on the question shapes that justify each reasoner.
 - A graph question with only one hop (that's a join).
 - A prescriptive question with no real constraint (that's a sort).
 - A persistent-rule question that doesn't change the answer when added.
+- "We'll see what the data shows." No - the data hasn't been generated
+  yet. You decide what the answer should be at Phase 1; Phase 2 engineers
+  the data to produce it. Reverse this and the talk track is at the mercy
+  of the random number generator.
 
 ---
 
@@ -53,8 +63,21 @@ SQL demo). Land on the question shapes that justify each reasoner.
 
 **Goal.** Create a defensible synthetic dataset, small enough to be fast
 (target: each query under 30 s warm) and rich enough to make every Phase 1
-question land. Load it into the SE Snowflake account **as the demo role
-only** - see CLAUDE.md > "Snowflake security harness".
+question land. **Engineer the data backwards from the expected answers
+authored at Phase 1** - the talk track's "interesting" moments are
+hand-injected, not discovered. The seed makes the chaff deterministic;
+the load-bearing entities are placed by hand. Load it into the SE
+Snowflake account **as the demo role only** - see CLAUDE.md > "Snowflake
+security harness".
+
+**The inversion that matters.** The naive approach is "generate the data
+with `seed=42`, run the queries, see what comes out, write the talk track
+around whatever the queries return". This is backwards and fragile.
+The correct approach: at Phase 1 you already wrote down "KLG = 7 TOBT
+violations, KL1234 cascade hits 6 flights, the LP saves $X by routing
+through Y instead of Z". Phase 2's job is to inject the named entities,
+relationships, and edge cases that **produce exactly those answers**.
+Random fill only goes in spots that don't surface in any query.
 
 **Steps.**
 1. Confirm the security harness from intake is in place:
@@ -73,29 +96,54 @@ only** - see CLAUDE.md > "Snowflake security harness".
 4. Design the schema. Aim for the shape supply_chain used: ~15-20 tables, a
    mix of dimensions / masters / junctions / events / time. Not normalised
    to 3NF - leave the kind of redundancy a Snowflake schema actually has.
-5. Hand-pick the "anchored numbers" - the specific named entities and counts
-   the talk track will hinge on (supply_chain's "Suzhou battery shortage",
-   airplanes' "KL1234 cascade of 6 flights", "KLG handler with 7 TOBT
-   violations"). Bake these into the generator with `seed=42`.
-6. Write the generator under `data/build_<domain>_data.py`. Make it
-   reproducible.
-7. Write the loader under `data/load_to_snowflake.sh` (idempotent - DROP
+5. **Inject the answers.** Take the expected answers from Phase 1 and
+   write down, in the generator, exactly which entities + relationships
+   need to exist to produce them. Examples:
+   - Phase 1 said "KLG = 7 TOBT violations". The generator deterministically
+     creates 7 flights handled by KLG with `|ARDT - TOBT| > 5`. The other
+     handlers get 5 / 3 / 2 to round out the answer.
+   - Phase 1 said "KL1234 cascade hits 6 downstream flights". The generator
+     hard-codes a chain of 6 flights with rotation + slot-block edges
+     reaching back to KL1234.
+   - Phase 1 said "the LP saves $400K by routing through Supplier Y instead
+     of Supplier X". The generator assigns costs such that the LP's
+     `OPTIMAL` solution lands on exactly that delta (within $5K rounding).
+   - The persistent-rule answer (e.g. "adding `PreservedFlight(KL691)`
+     reduces KL691's delay from 22 min to 4 min") must drop out of the
+     LP under both formulations with the data as constructed.
+6. **Random fill the rest.** Bake the seed (`seed=42`) into the generator
+   so the chaff (non-talk-track entities) is reproducible. Random fill
+   never produces a talk-track moment - if a query's "interesting" answer
+   depends on random data, you have a fragile demo; pin it.
+7. Write the generator under `data/build_<domain>_data.py`. Make it
+   reproducible. Add docstrings that name the injected entities and which
+   Phase 1 question each one services.
+8. Write the loader under `data/load_to_snowflake.sh` (idempotent - DROP
    TABLE IF EXISTS then CREATE then COPY INTO from stage). Every snow
    invocation uses `--role RAI_DEMO_<DOMAIN>`.
-8. Run the loader. Verify row counts.
-9. Add Snowflake-native metadata: COMMENTs on database/schema/tables/columns,
-   tags in `<DB>.META` for `DATA_DOMAIN`, `TABLE_ROLE`, `GRAIN`, `DEMO_AREA`.
-   Pattern is in `supply_chain_demo/annotate_and_doc.py`.
-10. Generate `DATA_DICTIONARY.md` from the Snowflake metadata.
-11. Enable change tracking on every table (PyRel requires it):
+9. Run the loader. Verify row counts.
+10. **Write `data/<domain>_demo_validation.sql`** that reproduces every
+    expected answer as raw SQL - one query per Phase 1 question. Run it.
+    Every result must match the expected answer exactly. If a result is
+    off by one row or a single value drifts, fix the data generator (not
+    the talk track) until they reproduce. This is the gate between Phase
+    2 and Phase 3 - if the SQL answers are wrong, the PyRel queries will
+    inherit the drift.
+11. Add Snowflake-native metadata: COMMENTs on database/schema/tables/columns,
+    tags in `<DB>.META` for `DATA_DOMAIN`, `TABLE_ROLE`, `GRAIN`, `DEMO_AREA`.
+    Pattern is in `supply_chain_demo/annotate_and_doc.py`.
+12. Generate `DATA_DICTIONARY.md` from the Snowflake metadata.
+13. Enable change tracking on every table (PyRel requires it):
     `ALTER TABLE <T> SET CHANGE_TRACKING = TRUE` for each table.
 
 **Exit criteria.**
 - `data/build_<domain>_data.py` runs end-to-end with `seed=42` and is idempotent.
 - `data/load_to_snowflake.sh` succeeds from a clean database.
 - Row counts match the generator's expected counts (assert this).
-- The anchored numbers from Phase 1 reproduce as raw SQL - add the queries
-  to `data/<domain>_demo_validation.sql` and assert their outputs.
+- **`data/<domain>_demo_validation.sql` reproduces every Phase 1 expected
+  answer exactly.** Not "approximately", not "close enough". The injected
+  entities must produce the named numbers and named rows. If any query
+  drifts, the data generator is wrong; fix it before moving on.
 - Change tracking is enabled on every source table.
 - `DATA_DICTIONARY.md` is regenerated.
 
@@ -105,6 +153,13 @@ only** - see CLAUDE.md > "Snowflake security harness".
   their eyes - use real-sounding SKUs / callsigns / claim numbers).
 - A "perfect" dataset with no problem in it - Phase 1 questions need to
   have actual answers, including violations, cascades, and infeasibilities.
+- Letting the random generator decide which entities show up in the talk
+  track. If you can't point at the line in `build_<domain>_data.py` that
+  inserts the entity behind a Phase 1 anchored number, you don't have a
+  deterministic demo - you have a hope.
+- Tweaking the talk track to match what the data happened to produce. The
+  Phase 1 expected answers are the spec; the data generator implements
+  the spec; the talk track recites the spec. Never the other way around.
 
 ---
 
@@ -135,8 +190,13 @@ concepts, properties, relationships, subtypes, and derived properties.
   `BomEntry` / `Lane` in supply_chain.
 - At least 3 derived properties / relationships exist (rules that the
   ontology computes, not just data it stores).
-- Both engines (`<domain>_logic_l`, `<domain>_prescriptive_m`) resume to
-  READY without error.
+- Both engines (`<domain>_logic_xs`, `<domain>_prescriptive_xs`) resume to
+  READY without error. **Default to `HIGHMEM_X64_XS` for both** to keep
+  dev costs low - the build phase is dominated by agent thinking time,
+  not query compute. Set auto-suspend to 5 minutes so idle warm-time
+  doesn't accumulate: `.venv/bin/rai reasoners alter <name> --auto-suspend-mins 5`.
+  Size up only at Phase 8 if measured queries need it; see CLAUDE.md >
+  "Engine sizing".
 
 **Anti-patterns.**
 - One concept per table verbatim with no enrichment - that's just a SQL view.
@@ -181,10 +241,16 @@ concepts, properties, relationships, subtypes, and derived properties.
 
 **Exit criteria.**
 - `.venv/bin/python rai_code/manual/demo_queries.py` runs end-to-end from
-  the project root with the engines warm.
+  the project root with the engines warm. The script is **local Python**
+  but every query fires against the **live Snowflake demo DB** via PyRel +
+  the `rai` connection profile + the demo role. **All N queries green, no
+  tracebacks, no warnings about deprecated APIs.** No mocked data, no
+  dry-run. Iterate until every query passes; see CLAUDE.md > "Definition
+  of done".
 - Each query returns a non-empty DataFrame.
 - The anchored numbers from Phase 1 / Phase 2 reproduce in the query
-  outputs (assert them in `main()`).
+  outputs (assert them in `main()` with `assert df.shape[0] == EXPECTED`
+  or equivalent - silent drift is the failure mode that bites at demo time).
 - LP / MIP queries return `OPTIMAL` status. If `INFEASIBLE`, root-cause via
   `/rai-prescriptive-results-interpretation` and fix the formulation -
   do not move on with a broken solver.
@@ -218,8 +284,8 @@ them and produces a Plotly figure for each.
    `papermill` or `jupyter nbconvert --execute` to verify.
 
 **Exit criteria.**
-- `.venv/bin/jupyter nbconvert --execute --to notebook --inplace rai_code/manual/<domain>_demo.ipynb` succeeds.
-- Every query has a corresponding Plotly figure.
+- `.venv/bin/jupyter nbconvert --execute --to notebook --inplace rai_code/manual/<domain>_demo.ipynb` succeeds end-to-end. The notebook runs **locally** (your `.venv` Jupyter kernel) but every PyRel query inside it hits the **live Snowflake demo DB**. **Every cell green, no exceptions, no skipped cells.** If a cell fails, iterate (fix the underlying query or model, re-run) until it's green - see CLAUDE.md > "Definition of done".
+- Every query has a corresponding Plotly figure that actually renders.
 - Markdown cells are not empty placeholders - they're the talk track in
   miniature.
 
@@ -248,8 +314,16 @@ them and produces a Plotly figure for each.
 **Exit criteria.**
 - The notebook is uploaded and visible in Snowsight Files at
   `<DB>.NOTEBOOKS.<DOMAIN>_DEMO`.
-- `snow notebook execute` runs it end-to-end without errors.
-- Result figures appear inline.
+- `snow notebook execute --role RAI_DEMO_<DOMAIN> <DB>.NOTEBOOKS.<DOMAIN>_DEMO`
+  runs it **end-to-end without errors**. Every cell green.
+- **Manually open the notebook in Snowsight and re-run all cells** once.
+  The CLI execute sometimes reports success while a chart silently fails
+  to render in the UI. This visual check is non-optional.
+- Every figure renders correctly in the Snowsight UI (no broken images,
+  no truncated tables).
+- If anything is yellow or red, iterate until green - see CLAUDE.md >
+  "Definition of done". Common Snowsight-only failure modes are listed
+  there.
 
 **Skip if** intake Q3 was "Just the ontology + notebook".
 
@@ -280,8 +354,18 @@ demo questions in natural language inside Snowsight.
 
 **Exit criteria.**
 - `.venv/bin/python -m agent.deploy status` reports the agent deployed.
-- All N demo questions answer correctly via `chat` with reasonable latency.
-- Chart hints render in Snowsight (manual visual check).
+- **All N demo questions answer correctly** via `chat`. Run each one
+  explicitly: `.venv/bin/python -m agent.deploy chat "<question>"`.
+  Each must return the expected DataFrame shape and at least one
+  anchored number from Phase 2. No tracebacks, no timeouts, no
+  hallucinated answers when the query should fail. Reasonable latency
+  (60-90 s warm for rules/graph/heuristic; 2-3 min for prescriptive).
+- Chart hints render in Snowsight (manual visual check inside the agent
+  chat UI - click the chart icon next to a result table and confirm a
+  chart appears).
+- If any question fails, iterate (fix the QueryCatalog wrapper, the
+  underlying PyRel query, or the chart-hint payload) until every
+  question is green - see CLAUDE.md > "Definition of done".
 
 **Skip if** intake Q3 was "Just the ontology + notebook".
 
@@ -294,7 +378,14 @@ live demo, and the speaker-facing static runbook.
 
 **Steps.**
 1. Copy `airplanes_demo/prep_demo.py` and adapt:
-   - Replace `acdm_logic_l` / `acdm_prescriptive_m` with the demo's engines.
+   - Replace `acdm_logic_l` / `acdm_prescriptive_m` with the demo's
+     engines (start at `<domain>_logic_xs` / `<domain>_prescriptive_xs`).
+   - **Sizing decision.** Run the full smoke test on XS first. If any
+     query takes >60 s warm or `/rai-health` flags memory pressure on a
+     specific engine, size that one engine up to `S` and re-test.
+     Document the size + the measurement that justified it in `BRIEF.md`
+     under "Design decisions" so the next session doesn't regress it.
+     Only the reference demos' final showtime warranted L/M.
    - Replace `ACDM_DEMO.EHAM` with `<DB>.<SCHEMA>`.
    - Replace the anchored-number SQL checks with this demo's anchored numbers.
    - Replace the smoke-test sentinels with values you know reproduce.
@@ -309,10 +400,17 @@ live demo, and the speaker-facing static runbook.
 5. Wire `prep_demo.py --skip-figures` to skip step 3 for fast iteration.
 
 **Exit criteria.**
-- `.venv/bin/python prep_demo.py` finishes with all checks GREEN.
+- `.venv/bin/python prep_demo.py` finishes with **all checks GREEN** -
+  Snowflake connection, schema, change tracking, anchored numbers,
+  engines READY, all demo queries green, agent deployed, chat smoke test
+  green, Snowsight notebook executes green, figures regenerated. The
+  gate is the integration test for the whole stack. No yellow, no red.
+  Iterate until clean; see CLAUDE.md > "Definition of done".
 - Cold-start (both engines suspended) completes in under 10 minutes.
 - `RUNNING.html` opens in a browser and shows every embedded figure.
 - The "anchored numbers" section in `RUNNING.html` matches the talk track.
+- Run `prep_demo.py` twice in a row from a cold start and from a warm
+  start - it must be idempotent and pass both times.
 
 ---
 

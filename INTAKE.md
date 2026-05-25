@@ -103,7 +103,9 @@ experts").
    - Database name: `PK_<DOMAIN>` uppercased (matching supply_chain's `PK_SUPPLY_CHAIN`)
    - **Demo role name:** `RAI_DEMO_<DOMAIN>` uppercased (e.g. `RAI_DEMO_SUPPLY_CHAIN`)
    - Agent name: same as model name
-   - Engine names: `<model>_logic_l` and `<model>_prescriptive_m`
+   - Engine names: `<model>_logic_xs` and `<model>_prescriptive_xs` (size
+     `HIGHMEM_X64_XS` by default; see CLAUDE.md > "Engine sizing" for
+     when to size up)
    - Schema name: `RAI_AGENT`
    - Pre-stated "anchored numbers" placeholder section that Phase 2 will fill
 
