@@ -124,6 +124,8 @@
       "Bash(env)",
       "Bash(which *)",
       "Bash(whoami)",
+      "Bash(ps *)",
+      "Bash(ps)",
 
       "Bash(mkdir *)",
       "Bash(touch *)",
