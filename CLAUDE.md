@@ -180,6 +180,56 @@ The exact `_build_config()` pattern that works in both local Python AND inside
 a Snowsight notebook is in `supply_chain_demo/rai_code/manual/supply_chain.py`
 - copy it.
 
+## Snowflake modeling principles
+
+The Snowflake schema is not just data storage - it is the **input to the
+RelationalAI agentic modeler**, which reads database metadata to produce a
+v0 ontology in the UI. Two principles follow.
+
+### Denormalised, not 3NF
+
+A real customer's Snowflake schema is wide and flat. Joins cost more than
+scans on Snowflake; denormalisation is the native idiom. Going to 3NF makes
+the demo look academic rather than realistic, and it gives the agentic
+modeler fewer columns to attach concepts to.
+
+- Aim for ~15-20 tables: a mix of dimensions / masters / junctions /
+  events / time series. Use the supply_chain shape as the reference.
+- Where 3NF would split, leave the redundancy. Repeat the customer name on
+  every order line. Repeat the product category on every transaction.
+- Junction tables stay - the agentic modeler turns them into concepts
+  with relationships (the `SupplierProduct` / `BomEntry` / `Lane` pattern).
+- Avoid pure `(id, name)` lookup tables - inline the name on the parent.
+
+### Metadata is the contract with the agentic modeler
+
+The v0 ontology the modeler produces is only as good as the metadata it
+reads. Thin metadata = thin v0 = more enrichment work in Phase 3 that
+better DDL at Phase 2 would have avoided. Every table that ships into the
+demo DB MUST have:
+
+| Metadata | What it teaches the modeler |
+|---|---|
+| Database `COMMENT` | One sentence: what the demo represents |
+| Schema `COMMENT` | One sentence per schema: what lives in it |
+| Table `COMMENT` | One sentence per table - the grain ("one row per X") and the real-world entity it represents |
+| Column `COMMENT` | Every column: meaning, units, value range if bounded. Yes, every one |
+| Primary keys | `CONSTRAINT pk_<table> PRIMARY KEY (...)`. Snowflake does not enforce but the modeler reads them as concept keys |
+| Foreign keys | `CONSTRAINT fk_<table>_<ref> FOREIGN KEY (col) REFERENCES <ref>(col)`. Same: not enforced, but the modeler uses them to infer relationships between concepts |
+| `NOT NULL` | On every column that's never null in the data. Tells the modeler "this is a required property" |
+| `UNIQUE` | On natural keys that aren't the PK. Tells the modeler "this column identifies the entity" |
+| Tags in `<DB>.META` | `DATA_DOMAIN`, `TABLE_ROLE` (dim / fact / junction / event), `GRAIN`, `DEMO_AREA` |
+
+The agentic modeler is the first reader of your schema. Imagine a senior
+data engineer who has never seen the domain reviewing your DDL: they
+should be able to draft a correct v0 ontology from the DDL alone, with
+no chat context. If they can't, your metadata is thin.
+
+Pattern reference: `supply_chain_demo/annotate_and_doc.py` applies COMMENTs
+and tags after the loader runs. Copy and extend it - if the original
+pattern doesn't include PK/FK declarations, add them. This metadata is
+required, not optional, and Phase 2 does not exit until it's complete.
+
 ## Snowflake security harness
 
 The sales-engineering account is shared. The `rai` connection profile's

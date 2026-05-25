@@ -107,7 +107,12 @@ experts").
      `HIGHMEM_X64_XS` by default; see CLAUDE.md > "Engine sizing" for
      when to size up)
    - Schema name: `RAI_AGENT`
-   - Pre-stated "anchored numbers" placeholder section that Phase 2 will fill
+   - Pre-stated "anchored numbers" placeholder section that Phase 1 / Phase 2 will fill
+   - **Seed data status (from Q2).** Record whether seed data is provided
+     and, if so, what (CSV / DDL / PDF / existing Snowflake table). Phase
+     2 branches on this: if seed exists, the agent profiles and extends
+     rather than generating from scratch - see PIPELINE.md > Phase 2 >
+     "Branch: seed data provided".
 
 3. **Bootstrap the Snowflake security harness.** This happens once, at
    intake, before Phase 1. The harness is a demo-specific role scoped to

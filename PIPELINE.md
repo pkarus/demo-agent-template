@@ -59,16 +59,18 @@ SQL demo). Land on the question shapes that justify each reasoner.
 
 ---
 
-## Phase 2 - Invent and load synthetic data into Snowflake
+## Phase 2 - Invent and load data into Snowflake
 
-**Goal.** Create a defensible synthetic dataset, small enough to be fast
+**Goal.** Land a defensible dataset in Snowflake, small enough to be fast
 (target: each query under 30 s warm) and rich enough to make every Phase 1
 question land. **Engineer the data backwards from the expected answers
 authored at Phase 1** - the talk track's "interesting" moments are
-hand-injected, not discovered. The seed makes the chaff deterministic;
-the load-bearing entities are placed by hand. Load it into the SE
-Snowflake account **as the demo role only** - see CLAUDE.md > "Snowflake
-security harness".
+hand-injected, not discovered. The seed makes the chaff deterministic; the
+load-bearing entities are placed by hand. The schema is **denormalised and
+metadata-rich** because the agentic modeler reads it at Phase 3 to draft
+the v0 ontology - see CLAUDE.md > "Snowflake modeling principles". Load
+into the SE Snowflake account **as the demo role only** - see CLAUDE.md >
+"Snowflake security harness".
 
 **The inversion that matters.** The naive approach is "generate the data
 with `seed=42`, run the queries, see what comes out, write the talk track
@@ -78,6 +80,44 @@ violations, KL1234 cascade hits 6 flights, the LP saves $X by routing
 through Y instead of Z". Phase 2's job is to inject the named entities,
 relationships, and edge cases that **produce exactly those answers**.
 Random fill only goes in spots that don't surface in any query.
+
+**Branch: seed data provided.** If intake Q2 indicated seed data exists
+(CSV, DDL, PDF, an existing Snowflake table the user wants to demo
+against), do not skip to generation. Do this first, then return to the
+numbered steps below:
+
+1. **Profile what you got.** For each table: row count, column dtypes,
+   null rates, cardinalities, value distributions of categorical columns,
+   min/max/quantiles of numeric columns, sample rows. Save the profile to
+   `data/seed_profile.md`. Use pandas locally for files, or `snow sql`
+   for existing Snowflake tables.
+2. **Reverse-engineer the schema.** Infer primary keys (uniqueness checks
+   on candidate id columns), foreign keys (referential-integrity checks
+   between candidate join keys), and the grain of each table. Document
+   every inference in `data/seed_profile.md` - the agentic modeler will
+   read these as declared constraints in step 11 below.
+3. **Map the seed to your Phase 1 questions.** For each question, decide:
+   does the seed alone contain the columns, tables, and rows needed to
+   produce the expected answer? List the gaps explicitly. Common gaps:
+   a missing cost column for a prescriptive question, a missing event
+   table for a graph cascade, missing rows for the named anchored
+   entities.
+4. **Plan the extension.** For each gap: add a column to a seed table,
+   add a new table that the seed implies but does not contain, or inject
+   specific rows for anchored entities (e.g. the named "KL1234" flight
+   that the cascade question needs). Document the plan in
+   `data/seed_extension_plan.md` so the user can review what the demo
+   will add on top of their data.
+5. **Build the extension in the generator.** `data/build_<domain>_data.py`
+   now has two halves: (a) the seed is loaded as-is (never silently
+   modified - the customer's confidence in the demo turns on "you used
+   our data"), (b) the extension augments the seed deterministically to
+   land the anchored numbers. The combined output is what loads to
+   Snowflake.
+6. **Then continue from Step 1 below** (security harness check) and
+   complete the rest of Phase 2 - schema declaration, loader,
+   validation SQL, metadata. Treat the seed + extension as one dataset
+   from this point on.
 
 **Steps.**
 1. Confirm the security harness from intake is in place:
@@ -93,9 +133,16 @@ Random fill only goes in spots that don't surface in any query.
    `--role RAI_DEMO_<DOMAIN>` explicitly.** Save all DDL / DML to files
    under `data/` and invoke via `snow sql -f`; this is what the user
    reviews. Do not pass DDL via `-q` inline.
-4. Design the schema. Aim for the shape supply_chain used: ~15-20 tables, a
-   mix of dimensions / masters / junctions / events / time. Not normalised
-   to 3NF - leave the kind of redundancy a Snowflake schema actually has.
+4. Design the schema, **denormalised**. Aim for the shape supply_chain
+   used: ~15-20 tables, a mix of dimensions / masters / junctions /
+   events / time. Real customer schemas are wide and flat - joins cost
+   more than scans on Snowflake, so denormalisation is the native idiom.
+   Going to 3NF makes the demo look academic and gives the agentic
+   modeler fewer columns to attach concepts to. Inline names instead of
+   `(id, name)` lookup tables. Repeat the customer name on every order
+   line. Keep junction tables - the agentic modeler turns them into
+   concepts with relationships. See CLAUDE.md > "Snowflake modeling
+   principles" for the rationale.
 5. **Inject the answers.** Take the expected answers from Phase 1 and
    write down, in the generator, exactly which entities + relationships
    need to exist to produce them. Examples:
@@ -129,9 +176,31 @@ Random fill only goes in spots that don't surface in any query.
     the talk track) until they reproduce. This is the gate between Phase
     2 and Phase 3 - if the SQL answers are wrong, the PyRel queries will
     inherit the drift.
-11. Add Snowflake-native metadata: COMMENTs on database/schema/tables/columns,
-    tags in `<DB>.META` for `DATA_DOMAIN`, `TABLE_ROLE`, `GRAIN`, `DEMO_AREA`.
-    Pattern is in `supply_chain_demo/annotate_and_doc.py`.
+11. **Write the metadata, which is the contract with the agentic modeler.**
+    See CLAUDE.md > "Snowflake modeling principles" for the rationale.
+    Phase 3's agentic modeler reads this metadata to draft the v0
+    ontology, so thin metadata here means thin v0 there. For every table:
+    - `COMMENT ON TABLE` describing the grain ("one row per...") and the
+      real-world entity it represents.
+    - `COMMENT ON COLUMN` for **every** column: meaning, units, value
+      range if bounded. Not just the interesting ones - every one.
+    - `ALTER TABLE ... ADD CONSTRAINT pk_<table> PRIMARY KEY (...)`
+      declared. Snowflake does not enforce, but the modeler reads PKs as
+      concept keys.
+    - `ALTER TABLE ... ADD CONSTRAINT fk_<table>_<ref> FOREIGN KEY (col)
+      REFERENCES <ref>(col)` for every relationship. Same: not enforced,
+      but the modeler uses FKs to infer relationships between concepts.
+    - `NOT NULL` on every column that's never null in the data.
+    - `UNIQUE` constraints on natural keys that aren't the PK.
+    - Tags in `<DB>.META` for `DATA_DOMAIN`, `TABLE_ROLE`
+      (dim / fact / junction / event), `GRAIN`, `DEMO_AREA`.
+    - Database-level and schema-level `COMMENT` describing what the demo
+      represents and what lives in each schema.
+
+    Pattern reference: `supply_chain_demo/annotate_and_doc.py` applies
+    COMMENTs and tags after the loader runs. If the existing pattern
+    doesn't include PK / FK declarations, extend it - this metadata is
+    required, not optional.
 12. Generate `DATA_DICTIONARY.md` from the Snowflake metadata.
 13. Enable change tracking on every table (PyRel requires it):
     `ALTER TABLE <T> SET CHANGE_TRACKING = TRUE` for each table.
@@ -145,7 +214,18 @@ Random fill only goes in spots that don't surface in any query.
   entities must produce the named numbers and named rows. If any query
   drifts, the data generator is wrong; fix it before moving on.
 - Change tracking is enabled on every source table.
-- `DATA_DICTIONARY.md` is regenerated.
+- **Metadata is complete for the agentic modeler.** Every table has a
+  `COMMENT`. Every column has a `COMMENT`. Every PK is declared. Every
+  FK is declared. `NOT NULL` is set on every column that the data shows
+  is never null. Tags are applied. Verify with `SHOW TABLES IN SCHEMA`
+  + `DESCRIBE TABLE` + `SHOW PRIMARY KEYS` + `SHOW IMPORTED KEYS` and
+  spot-check column comments via `SELECT COLUMN_NAME, COMMENT FROM
+  INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '...'`.
+- `DATA_DICTIONARY.md` is regenerated and includes the new metadata.
+- **If seed data was provided**, `data/seed_profile.md` and
+  `data/seed_extension_plan.md` exist and the user reviewed them before
+  the loader ran. The seed's original columns and rows are unchanged in
+  the loaded data.
 
 **Anti-patterns.**
 - More than ~500K rows in the largest table (slow + costly).
@@ -160,6 +240,17 @@ Random fill only goes in spots that don't surface in any query.
 - Tweaking the talk track to match what the data happened to produce. The
   Phase 1 expected answers are the spec; the data generator implements
   the spec; the talk track recites the spec. Never the other way around.
+- **Normalising the schema to 3NF.** Real Snowflake schemas are wide;
+  3NF makes the demo look academic and gives the modeler less to work
+  with. Inline names; keep redundancy; keep junctions.
+- **Shipping bare tables with no metadata.** No table COMMENTs, no column
+  COMMENTs, no PKs, no FKs. The agentic modeler reads metadata to draft
+  the v0 ontology, and bare tables produce a bare v0. Phase 3 will then
+  fight uphill to enrich what Phase 2 should have declared.
+- **Silently modifying provided seed data.** If the user gave you a seed,
+  the seed's columns and rows must round-trip into Snowflake unchanged.
+  All augmentation goes into new rows or new columns, explicitly listed
+  in `data/seed_extension_plan.md`.
 
 ---
 
