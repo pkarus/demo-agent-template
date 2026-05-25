@@ -201,6 +201,18 @@ an interrupt during normal phase execution.
 If something interrupts you that shouldn't, log it in `BRIEF.md` under
 `### Autonomy issues` and continue - don't relitigate it with the user.
 
+**Note on chained commands.** Claude Code's permission patterns match the
+**full command string**, so `cd ~/rai-repos/bmw_demo && git status` does
+**not** match `Bash(git status*)` and will prompt even though `git status`
+on its own would not. Chaining with `&&` or `|` therefore *tightens*
+allow-list matching, never loosens it (and the deny list uses substring
+matching, so chained dangerous ops are still caught). When inspecting a
+sibling repo, prefer `git -C ~/rai-repos/<repo> <subcommand>` over
+`cd ~/rai-repos/<repo> && git <subcommand>` - the `-C` form keeps the
+allow pattern simple. A handful of common chained read-only forms are
+pre-allowed for convenience (see [.claude/settings.json](.claude/settings.json)),
+but the `-C` form is the more general fix.
+
 ## Snowflake conventions (sales-engineering account)
 
 - Connection profile: `rai` in `~/.snowflake/connections.toml`
