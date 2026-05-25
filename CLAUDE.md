@@ -55,18 +55,6 @@ and seeing what completes. If nothing completes, the plugin failed to load -
 run the user-facing command `/plugin install rai@RelationalAI` once, or
 verify network access to github.com.
 
-| Phase | Primary skill | Secondary |
-|---|---|---|
-| 1 - Position | `/rai-discovery` | `/rai-ontology-design` |
-| 2 - Data | *(no RAI skill - `snow` CLI)* | `/rai-setup` to validate |
-| 3 - Ontology | `/rai-build-starter-ontology` then `/rai-ontology-design` | `/rai-pyrel-coding` |
-| 4 - Queries | `/rai-querying` (always first), `/rai-rules-authoring`, `/rai-graph-analysis`, `/rai-prescriptive-problem-formulation` → `/rai-prescriptive-solver-management` → `/rai-prescriptive-results-interpretation` | `/rai-discovery` to classify each question |
-| 5 - Local notebook | `/rai-querying`, `/rai-pyrel-coding` | - |
-| 6 - Snowsight notebook | `/rai-querying`, `/rai-pyrel-coding` | `/rai-setup` for stage upload |
-| 7 - Cortex agent | `/rai-cortex-integration` | `/rai-querying` for the catalog |
-| 8 - Gate + runbook | `/rai-health` | `/rai-setup` |
-| 9 - Talk track + handoff | `/rai-prescriptive-results-interpretation` | - |
-
 The full set: `rai-setup`, `rai-discovery`, `rai-build-starter-ontology`,
 `rai-ontology-design`, `rai-pyrel-coding`, `rai-querying`, `rai-rules-authoring`,
 `rai-graph-analysis`, `rai-prescriptive-problem-formulation`,
@@ -74,12 +62,77 @@ The full set: `rai-setup`, `rai-discovery`, `rai-build-starter-ontology`,
 `rai-cortex-integration`, `rai-health`, `rai-predictive-modeling` (early
 access, GNN), `rai-predictive-training` (early access, GNN).
 
-**`/rai-querying` is mandatory at Phase 4** - its SKILL.md says: *"Load this
-BEFORE writing any PyRel query, even your first one - your prior knowledge of
-the syntax is likely stale."* Treat that as binding.
+#### Discovery is the router. Always discover before implementing.
 
-Skills auto-load, but invoke them explicitly when you enter each phase using
-the `Skill` tool - that signals progress to the user.
+`rai-discovery` is the **translation layer** between user-facing questions
+and reasoner implementations. It does two distinct jobs:
+
+1. **Ideation pass.** Given an ontology + a domain, what questions can the
+   data actually answer? Surfaces candidate questions across reasoner
+   families that you may not have thought of.
+2. **Classification + hints pass.** Given one candidate question, which
+   reasoner family fits (rules / graph / heuristic / prescriptive /
+   persistent rule / hybrid) and which sub-pattern within that family?
+   Emits the implementation hints the next skill consumes.
+
+Run discovery **twice** in the lifecycle:
+
+- **Phase 1 (Position)** for the ideation pass - brainstorm candidates
+  across families, then pick the 3 / 5 / 10 questions the demo will tell.
+- **Phase 4 (Author queries)** for the classification + hints pass, once
+  per question, immediately before invoking the implementation skill.
+  Phase 1's classification was provisional; per-question discovery
+  sharpens it and produces the hints the implementation skill needs.
+
+Skipping discovery and jumping straight to a reasoner skill is the
+fastest way to write the wrong query: a path question framed as a filter,
+a heuristic written as if it were optimal, an assignment LP that should
+have been a flow MIP. Discovery is cheap; the wrong skill costs an hour
+of rework.
+
+#### Implementation pipelines per reasoner family
+
+Once discovery has classified a question, the implementation pipeline is
+fixed per family. Invoke the skills in the order shown:
+
+| Family | Pipeline (in order) | Notes |
+|---|---|---|
+| **Rules** (validation, classification, derivation, alerting, reconciliation) | `rai-rules-authoring` → `rai-querying` | rules-authoring creates new derived properties on the ontology; querying then reads and aggregates them. **Querying cannot create derived properties** - if you need a new tier / flag / segment, rules-authoring must run first |
+| **Graph** (centrality, community, reachability, distance, similarity, components) | `rai-graph-analysis` → `rai-querying` | graph-analysis covers algorithm-family selection inside the skill (sub-discovery), graph construction from the ontology, parameter tuning, and result extraction; querying then reads results |
+| **Graph** (path enumeration via `relationalai.semantics.std.paths`) | `rai-pathfinder` (project-local) → `rai-querying` | marketplace `rai-graph-analysis` does **not** cover path enumeration. Use the project-local skill copied from `supply_chain_demo/.claude/skills/rai-pathfinder/SKILL.md` - see "Project-local skills" below |
+| **Heuristic** (deterministic scoring over the ontology) | `rai-querying` only | no separate authoring skill - heuristic scores ARE derived properties expressed through the query DSL |
+| **Prescriptive** (LP / MIP) | `rai-prescriptive-problem-formulation` → `rai-prescriptive-solver-management` → `rai-prescriptive-results-interpretation` | strict linear pipeline. Formulation defines decision variables / constraints / objective; solver-management classifies the problem, selects the solver (HiGHS / Gurobi), validates, runs; results-interpretation extracts the solution, classifies status codes, explains why this is optimal |
+| **Persistent rule** (operator adds a rule, ontology re-solves) | `rai-rules-authoring` → re-invoke the prescriptive pipeline above | the rule lives on the model; the "query" is a re-solve of the prescriptive problem under the new rule |
+| **Predictive** (GNN, pre-GA - only if intake Q4 asked for it) | `rai-predictive-modeling` → `rai-predictive-training` | modeling covers entities / edges / features / Snowflake data loading; training covers fit / predict / evaluate |
+
+Two rules that apply to **all** families:
+
+1. **`rai-querying` is mandatory before any query.** Its SKILL.md says:
+   *"Load this BEFORE writing any PyRel query, even your first one - your
+   prior knowledge of the syntax is likely stale."* Treat that as binding.
+2. **`rai-pyrel-coding` is the syntax fallback.** When a family skill
+   leaves a syntax detail ambiguous (imports, type system, property
+   declarations, references), invoke `rai-pyrel-coding` rather than
+   guessing from training data.
+
+#### Skill use by phase (the index)
+
+| Phase | Skills (in order of invocation) |
+|---|---|
+| 1 - Position | `rai-discovery` (ideation pass) → `rai-ontology-design` |
+| 2 - Data | *(no RAI skill - `snow` CLI; `rai-setup` to validate connection)* |
+| 3 - Ontology | `rai-build-starter-ontology` → `rai-ontology-design` → `rai-pyrel-coding` for syntax |
+| 4 - Queries | **per question:** `rai-discovery` (classify + hints) → matching family pipeline (see table above). `rai-querying` must be loaded before the first query is written |
+| 5 - Local notebook | `rai-querying`, `rai-pyrel-coding` |
+| 6 - Snowsight notebook | `rai-querying`, `rai-pyrel-coding`; `rai-setup` for stage upload |
+| 7 - Cortex agent | `rai-cortex-integration`; `rai-querying` for the catalog |
+| 8 - Gate + runbook | `rai-health`, `rai-setup` |
+| 9 - Talk track + handoff | `rai-prescriptive-results-interpretation` (to explain solver output to the audience) |
+
+Skills auto-load, but invoke them **explicitly** via the `Skill` tool when
+you enter a phase or move on to a new question - that signals progress to
+the user and ensures the skill's authoritative SKILL.md is in your context,
+not a memory of it.
 
 ### 2. Project-local skills (the pre-GA-feature pattern)
 

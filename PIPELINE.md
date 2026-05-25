@@ -24,13 +24,21 @@ SQL demo). Land on the question shapes that justify each reasoner.
 
 **Steps.**
 1. Read `BRIEF.md` (the intake output).
-2. Invoke `/rai-discovery` (via Skill tool) and pass it the domain summary
-   plus the reasoner mix from Q4 of the intake.
+2. **Invoke `/rai-discovery` for the ideation pass** (via Skill tool) and
+   pass it the domain summary plus the reasoner mix from Q4 of intake.
+   Discovery's job here is to surface candidate questions the data
+   *could* answer across each reasoner family - more candidates than the
+   final set so you can pick the strongest. See CLAUDE.md > "Discovery
+   is the router" for what this skill does. Phase 4 will run discovery
+   again per question; this pass is for breadth, not commitment.
 3. Reference [DEMO_QUESTION_CATALOG.md](DEMO_QUESTION_CATALOG.md) for the
-   archetypes that work cleanly in each reasoner family.
+   archetypes that work cleanly in each reasoner family. Cross-check
+   discovery's candidates against the catalog - the catalog is the bank
+   of known-good shapes.
 4. Draft `DEMO_QUESTIONS.md` (use `airplanes_demo/DEMO_QUESTIONS.md` as the
    shape - plain-English questions, one per act, each labelled with the
-   reasoner type and what makes it interesting).
+   reasoner type and what makes it interesting). Note the reasoner-family
+   label is provisional; Phase 4's per-question discovery may re-classify.
 
 **Exit criteria.**
 - `DEMO_QUESTIONS.md` exists with N questions (N from intake Q3: 3, 5, or 10).
@@ -303,23 +311,44 @@ concepts, properties, relationships, subtypes, and derived properties.
 **Steps.**
 1. **Invoke `/rai-querying` first.** Mandatory - it's the syntax authority
    for the current PyRel version. Your training-data knowledge is stale.
-2. For each question, identify the reasoner family (rules / graph /
-   heuristic / prescriptive / persistent rule) and invoke the matching skill:
-   - Rules → `/rai-rules-authoring`
-   - Graph (reachability / centrality / community / distance) → `/rai-graph-analysis`
-   - Graph (path enumeration via `relationalai.semantics.std.paths`) →
-     copy `supply_chain_demo/.claude/skills/rai-pathfinder/SKILL.md` into your
-     own `.claude/skills/rai-pathfinder/SKILL.md` and load it. The
-     marketplace `/rai-graph-analysis` skill does not cover pathfinder;
-     this project-local skill does. Also skim `PyRel/example/paths/` for
-     runnable examples.
-   - Heuristic → `/rai-querying` (no separate skill - express as derived properties)
-   - Prescriptive → `/rai-prescriptive-problem-formulation` then
-     `/rai-prescriptive-solver-management`. Skim
-     `PyRel/example/prescriptive/` for canonical formulations and
-     `PyRel/src/relationalai/semantics/reasoners/prescriptive/` for the
-     real API signatures.
-   - Persistent rule → `/rai-rules-authoring` (the rule lives on the model, the query is a re-solve)
+   Loading it once at the top of Phase 4 covers every query you'll write
+   in this phase.
+2. **For each question, run the discovery-then-implementation pattern.**
+   See CLAUDE.md > "Discovery is the router" and > "Implementation
+   pipelines per reasoner family" for the full rationale. The per-question
+   loop is:
+
+   a. **Invoke `/rai-discovery`** for the question. It translates the
+      user-facing framing into a reasoner-family classification + the
+      specific sub-pattern within that family (reachability vs. paths;
+      assignment vs. flow; classification vs. derivation; etc.) plus
+      the implementation hints the next skill consumes. Phase 1's
+      classification was provisional - this pass sharpens it. If
+      discovery says "this is actually a graph problem, not the rules
+      problem you assumed", trust it.
+
+   b. **Invoke the matching implementation pipeline** in order, armed
+      with discovery's hints:
+
+      | Family | Pipeline |
+      |---|---|
+      | Rules | `/rai-rules-authoring` (creates derived properties on the model) → write the query that reads them |
+      | Graph - reachability / centrality / community / distance / similarity / components | `/rai-graph-analysis` (does sub-discovery on which algorithm fits, then implements) |
+      | Graph - path enumeration via `relationalai.semantics.std.paths` | copy `supply_chain_demo/.claude/skills/rai-pathfinder/SKILL.md` into `.claude/skills/rai-pathfinder/SKILL.md` and invoke it. The marketplace `/rai-graph-analysis` does **not** cover paths |
+      | Heuristic | `/rai-querying` alone - heuristic scores ARE derived properties expressed through the query DSL |
+      | Prescriptive (LP / MIP) | `/rai-prescriptive-problem-formulation` → `/rai-prescriptive-solver-management` → `/rai-prescriptive-results-interpretation`. Strict linear pipeline; don't skip steps |
+      | Persistent rule | `/rai-rules-authoring` to attach the rule to the model → re-invoke the prescriptive pipeline above for the re-solve |
+      | Predictive (GNN, only if intake Q4 asked) | `/rai-predictive-modeling` → `/rai-predictive-training` |
+
+   c. **Ground-truth against PyRel examples + tests.** Skim the relevant
+      `PyRel/example/<family>/` directory and grep
+      `PyRel/tests/end2end/` for the idiom. The skill tells you what
+      pattern to use; PyRel source shows you how it's actually called in
+      the current version.
+
+   Do not collapse step 2a (discovery) into step 2b (implementation).
+   Discovery is a separate skill invocation per question; its job is to
+   stop you from writing the wrong query.
 3. Write each query as a top-level function in `rai_code/manual/demo_queries.py`,
    named `qN_<slug>()` and returning a `pandas.DataFrame`.
 4. For prescriptive queries, also return the solver status - needed by
@@ -352,6 +381,18 @@ concepts, properties, relationships, subtypes, and derived properties.
 - Querying with stale syntax - `/rai-querying` exists because the API
   changes between PyRel minor versions.
 - Hardcoded magic numbers from Phase 2 - read them from the schema.
+- **Skipping `/rai-discovery` for "obvious" questions.** Phase 1's
+  reasoner-family classification was provisional. A question that
+  *sounds* like rules ("which flights violate TOBT") may actually be a
+  graph problem once you trace the cascade; a question that sounds like
+  a heuristic may actually need an LP. Discovery costs a minute;
+  reworking the wrong skill costs an hour.
+- **Jumping straight from discovery into a query without running the
+  family pipeline.** For prescriptive especially, the
+  formulation → solver-management → results-interpretation chain exists
+  because each step has its own decisions (decision-variable shape,
+  solver selection, status-code interpretation). Collapsing them into
+  one go produces formulations that solve but don't explain.
 
 ---
 
