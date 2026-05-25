@@ -140,6 +140,9 @@
       "Bash(whoami)",
       "Bash(ps *)",
       "Bash(ps)",
+      "Bash(ps aux*)",
+      "Bash(pgrep *)",
+      "Bash(pgrep)",
 
       "Bash(mkdir *)",
       "Bash(touch *)",
@@ -164,6 +167,10 @@
     "deny": [
       "Bash(rm -rf *)",
       "Bash(rm -fr *)",
+      "Bash(*rm -rf *)",
+      "Bash(*rm -fr *)",
+      "Bash(* | rm *)",
+      "Bash(*; rm *)",
 
       "Bash(git push --force*)",
       "Bash(git push -f*)",
