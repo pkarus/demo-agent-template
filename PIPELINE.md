@@ -53,29 +53,41 @@ SQL demo). Land on the question shapes that justify each reasoner.
 
 **Goal.** Create a defensible synthetic dataset, small enough to be fast
 (target: each query under 30 s warm) and rich enough to make every Phase 1
-question land. Load it into the SE Snowflake account.
+question land. Load it into the SE Snowflake account **as the demo role
+only** - see CLAUDE.md > "Snowflake security harness".
 
 **Steps.**
-1. Set up the venv: `uv venv && uv add relationalai pandas plotly jupyterlab kaleido`.
-2. Verify the snow CLI: `snow connection test -c rai`. If it fails, invoke
-   `/rai-setup`.
-3. Design the schema. Aim for the shape supply_chain used: ~15-20 tables, a
+1. Confirm the security harness from intake is in place:
+   ```
+   snow sql --role RAI_DEMO_<DOMAIN> -c rai --query "SELECT CURRENT_ROLE(), CURRENT_DATABASE();"
+   ```
+   You should see the demo role and the demo DB. If the role does not
+   exist, you skipped intake step 3 - go back and run
+   `data/00_bootstrap.sql`. Do NOT attempt to operate as the profile
+   default role from here on.
+2. Set up the venv: `uv venv && uv add relationalai pandas plotly jupyterlab kaleido`.
+3. **Every `snow sql` command in this and later phases passes
+   `--role RAI_DEMO_<DOMAIN>` explicitly.** Save all DDL / DML to files
+   under `data/` and invoke via `snow sql -f`; this is what the user
+   reviews. Do not pass DDL via `-q` inline.
+4. Design the schema. Aim for the shape supply_chain used: ~15-20 tables, a
    mix of dimensions / masters / junctions / events / time. Not normalised
    to 3NF - leave the kind of redundancy a Snowflake schema actually has.
-4. Hand-pick the "anchored numbers" - the specific named entities and counts
+5. Hand-pick the "anchored numbers" - the specific named entities and counts
    the talk track will hinge on (supply_chain's "Suzhou battery shortage",
    airplanes' "KL1234 cascade of 6 flights", "KLG handler with 7 TOBT
    violations"). Bake these into the generator with `seed=42`.
-5. Write the generator under `data/build_<domain>_data.py`. Make it
+6. Write the generator under `data/build_<domain>_data.py`. Make it
    reproducible.
-6. Write the loader under `data/load_to_snowflake.sh` (idempotent - DROP
-   TABLE IF EXISTS then CREATE then COPY INTO from stage).
-7. Run the loader. Verify row counts.
-8. Add Snowflake-native metadata: COMMENTs on database/schema/tables/columns,
+7. Write the loader under `data/load_to_snowflake.sh` (idempotent - DROP
+   TABLE IF EXISTS then CREATE then COPY INTO from stage). Every snow
+   invocation uses `--role RAI_DEMO_<DOMAIN>`.
+8. Run the loader. Verify row counts.
+9. Add Snowflake-native metadata: COMMENTs on database/schema/tables/columns,
    tags in `<DB>.META` for `DATA_DOMAIN`, `TABLE_ROLE`, `GRAIN`, `DEMO_AREA`.
    Pattern is in `supply_chain_demo/annotate_and_doc.py`.
-9. Generate `DATA_DICTIONARY.md` from the Snowflake metadata.
-10. Enable change tracking on every table (PyRel requires it):
+10. Generate `DATA_DICTIONARY.md` from the Snowflake metadata.
+11. Enable change tracking on every table (PyRel requires it):
     `ALTER TABLE <T> SET CHANGE_TRACKING = TRUE` for each table.
 
 **Exit criteria.**
@@ -143,9 +155,19 @@ concepts, properties, relationships, subtypes, and derived properties.
 2. For each question, identify the reasoner family (rules / graph /
    heuristic / prescriptive / persistent rule) and invoke the matching skill:
    - Rules → `/rai-rules-authoring`
-   - Graph → `/rai-graph-analysis`
+   - Graph (reachability / centrality / community / distance) → `/rai-graph-analysis`
+   - Graph (path enumeration via `relationalai.semantics.std.paths`) →
+     copy `supply_chain_demo/.claude/skills/rai-pathfinder/SKILL.md` into your
+     own `.claude/skills/rai-pathfinder/SKILL.md` and load it. The
+     marketplace `/rai-graph-analysis` skill does not cover pathfinder;
+     this project-local skill does. Also skim `PyRel/example/paths/` for
+     runnable examples.
    - Heuristic → `/rai-querying` (no separate skill - express as derived properties)
-   - Prescriptive → `/rai-prescriptive-problem-formulation` then `/rai-prescriptive-solver-management`
+   - Prescriptive → `/rai-prescriptive-problem-formulation` then
+     `/rai-prescriptive-solver-management`. Skim
+     `PyRel/example/prescriptive/` for canonical formulations and
+     `PyRel/src/relationalai/semantics/reasoners/prescriptive/` for the
+     real API signatures.
    - Persistent rule → `/rai-rules-authoring` (the rule lives on the model, the query is a re-solve)
 3. Write each query as a top-level function in `rai_code/manual/demo_queries.py`,
    named `qN_<slug>()` and returning a `pandas.DataFrame`.
@@ -153,6 +175,9 @@ concepts, properties, relationships, subtypes, and derived properties.
    `/rai-prescriptive-results-interpretation` and by the Phase 7 agent.
 5. Add a `main()` that runs all queries top-to-bottom and prints shape
    + first 3 rows of each. This is your smoke test.
+6. Whenever the marketplace skills are thin or contradict what you see in
+   the venv, ground-truth against `/Users/piotrkraus/rai-repos/PyRel/`
+   (source + examples + tests). Read access is pre-allowed.
 
 **Exit criteria.**
 - `.venv/bin/python rai_code/manual/demo_queries.py` runs end-to-end from

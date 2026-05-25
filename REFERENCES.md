@@ -139,6 +139,48 @@ measured, not aspirational.
 - A `~/.snowflake/connections.toml` profile named `rai` - already on this
   machine, no action needed.
 
+## The PyRel local checkout (`/Users/piotrkraus/rai-repos/PyRel`)
+
+Third reference, alongside the two demos. Source-of-truth for API
+signatures, runnable examples for every reasoner family, and tests-as-docs.
+Read access is pre-allowed in `.claude/settings.json`. Use it when the
+marketplace skills are thin or out of date.
+
+| Path | When to read | Notes |
+|---|---|---|
+| `PyRel/src/relationalai/semantics/std/paths/` | Phase 4 graph-path questions | The pathfinder source. Pre-GA. The `rai-pathfinder` project-local skill in `supply_chain_demo/.claude/skills/` is the friendly companion. |
+| `PyRel/src/relationalai/semantics/reasoners/prescriptive/` | Phase 4 LP/MIP, Phase 7 agent setup for solver tools | `Problem`, `Solver`, decision-variable wiring all live here. |
+| `PyRel/src/relationalai/semantics/` | Anywhere you need a canonical API signature | Includes `Model`, `Concept`, `Property`, `aggs`, `rank`, `top`, `inspect`. |
+| `PyRel/example/paths/` | Before authing a path-query | Each example is a small runnable program. |
+| `PyRel/example/prescriptive/` | Before authing an LP/MIP question | Same. |
+| `PyRel/example/cortex/` | Phase 7 (Cortex agent) | Reference deployment patterns. |
+| `PyRel/tests/end2end/` | When grepping for unfamiliar idioms | Each test is documentation. Especially useful when a marketplace skill says "use X" but doesn't show how. |
+| `PyRel/tests/reasoners/` | Reasoner-specific debugging | Narrower than end2end, often more illustrative. |
+| `PyRel/docs/` | When public docs at docs.relational.ai are stale | Less polished but more current than the public site. |
+| `PyRel/notes/` | Pre-GA feature design context | Internal notes - useful when working on features that haven't shipped yet. |
+
+The installed `relationalai` in your `.venv/` may lag the checkout. Verify
+with `uv pip show relationalai` and compare to `PyRel/pyproject.toml`. If
+the gap matters, install from the checkout: `uv pip install -e /Users/piotrkraus/rai-repos/PyRel`.
+
+## Project-local skills (the pre-GA pattern)
+
+Marketplace skills cover GA features. For pre-GA features, the reference
+demos add a project-local skill at `.claude/skills/<skill-name>/SKILL.md`.
+Claude Code picks these up from the active project automatically.
+
+Canonical example:
+`supply_chain_demo/.claude/skills/rai-pathfinder/SKILL.md` - 417-line
+authoritative reference for `relationalai.semantics.std.paths`
+(pre-GA path enumeration). Capability matrix, footgun list, query
+templates. The marketplace `/rai-graph-analysis` skill does NOT cover this.
+
+When your demo uses a pre-GA feature, replicate the pattern:
+1. Create `.claude/skills/<feature>/SKILL.md` in your repo.
+2. Write the rules / footguns / templates the next session will need.
+3. Grep PyRel source + tests to back up every claim.
+4. The next agent session inherits it automatically.
+
 That's the entire mapping. Don't reinvent anything that's in either
-reference demo without a reason - both went through several iterations to
-get to their current shape.
+reference demo or in PyRel without a reason - all three went through
+several iterations to get to their current shape.

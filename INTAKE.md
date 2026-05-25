@@ -101,30 +101,80 @@ experts").
    filling in the answers plus your derivations:
    - Model name: snake_case version of domain (e.g. "cold_chain_logistics")
    - Database name: `PK_<DOMAIN>` uppercased (matching supply_chain's `PK_SUPPLY_CHAIN`)
+   - **Demo role name:** `RAI_DEMO_<DOMAIN>` uppercased (e.g. `RAI_DEMO_SUPPLY_CHAIN`)
    - Agent name: same as model name
    - Engine names: `<model>_logic_l` and `<model>_prescriptive_m`
    - Schema name: `RAI_AGENT`
    - Pre-stated "anchored numbers" placeholder section that Phase 2 will fill
 
-3. **Pitch the demo back to the user** in 4-6 sentences in chat (not in
+3. **Bootstrap the Snowflake security harness.** This happens once, at
+   intake, before Phase 1. The harness is a demo-specific role scoped to
+   the demo database only - see CLAUDE.md > "Snowflake security harness"
+   for the full model.
+
+   a. Copy [BOOTSTRAP.template.sql](BOOTSTRAP.template.sql) to
+      `data/00_bootstrap.sql` and substitute `{{DEMO_DB}}`,
+      `{{DEMO_ROLE}}`, `{{DEMO_WAREHOUSE}}`, `{{CURRENT_USER}}` (get from
+      `snow sql --query "SELECT CURRENT_USER()"`).
+
+   b. To fill `{{RAI_APP_NAME}}`, run:
+      ```
+      snow sql -c rai --query "SHOW APPLICATIONS LIKE '%RAI%';"
+      ```
+      Use the returned `name` column. Then verify the application role
+      names with:
+      ```
+      snow sql -c rai --query "SHOW APPLICATION ROLES IN APPLICATION <name>;"
+      ```
+      If the role names differ from `RAI_DEVELOPER` / `RAI_USER`, edit
+      `data/00_bootstrap.sql` to match before continuing.
+
+   c. Use `AskUserQuestion` to confirm with the user, in **one question**:
+      - "Run `data/00_bootstrap.sql` as the rai profile's default role?
+        It creates database `{{DEMO_DB}}`, role `{{DEMO_ROLE}}`, and the
+        grants documented in CLAUDE.md > Snowflake security harness."
+      - Options: "Yes, run it" / "Let me read the file first" / "Skip
+        (use my own bootstrap)".
+
+   d. On confirmation, run it:
+      ```
+      snow sql -c rai -f data/00_bootstrap.sql
+      ```
+      This is the ONLY time you operate with the profile's default role
+      (likely ACCOUNTADMIN). Every subsequent `snow sql` MUST pass
+      `--role {{DEMO_ROLE}}`.
+
+   e. Smoke-test the role:
+      ```
+      snow sql --role {{DEMO_ROLE}} -c rai --query "SELECT CURRENT_ROLE(), CURRENT_DATABASE();"
+      ```
+      Expected: `{{DEMO_ROLE}}` and `{{DEMO_DB}}` (after `USE DATABASE`).
+
+   f. Record the demo role + DB in `BRIEF.md` under "Names" and under
+      "Snowflake security harness" (template field).
+
+4. **Pitch the demo back to the user** in 4-6 sentences in chat (not in
    `BRIEF.md`). Cover: what the data will look like, the 5 (or 3 or 10)
    questions you intend to author, which reasoner each maps to, and the one
    thing you're least sure about. This is the only place in the whole run
    you check in with the user. Tell them you'll proceed unless they object
    in the next reply.
 
-4. **Create a `TaskCreate` task list** with one task per phase from
+5. **Create a `TaskCreate` task list** with one task per phase from
    [PIPELINE.md](PIPELINE.md), in order, with the right `blockedBy`
    dependencies (Phase N+1 blocked by Phase N).
 
-5. **Mark Phase 1 in_progress** and start.
+6. **Mark Phase 1 in_progress** and start.
 
 ## Don't ask
 
 Do not ask any of the following in the intake - they're either pre-decided
 by the template or things you should figure out yourself:
 
-- Snowflake account / warehouse / role (always `ajb85638` / `RAI_XS` / `RAI_DEVELOPER`)
+- Snowflake account / warehouse (always `ajb85638` / `RAI_XS`)
+- Snowflake role (always created at intake as `RAI_DEMO_<DOMAIN>` per the
+  security harness; the user confirms the name in step 3.c above but
+  doesn't pick it from scratch)
 - Whether to use `uv` (yes)
 - Where to put files (the layout in [CLAUDE.md](CLAUDE.md) is fixed)
 - Whether to deploy a Cortex agent (depends on Q3; don't double-ask)

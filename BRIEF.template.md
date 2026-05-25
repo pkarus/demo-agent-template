@@ -47,6 +47,7 @@ published 22% CTOT rate" or "stay loose, this audience won't dig"._
 |---|---|
 | Model name (PyRel) | `<snake_case_domain>` |
 | Database name (Snowflake) | `PK_<DOMAIN_UPPER>` |
+| **Demo role (security harness)** | `RAI_DEMO_<DOMAIN_UPPER>` |
 | Schema for sources | `<DB>.<SCHEMA>` (typically same as DB or `EHAM`-style sub-schema) |
 | Schema for agent | `<DB>.RAI_AGENT` |
 | Logic engine | `<model>_logic_l` (HIGHMEM_X64_L) |
@@ -54,6 +55,38 @@ published 22% CTOT rate" or "stay loose, this audience won't dig"._
 | Notebook stage | `<DB>.NOTEBOOKS.<DOMAIN>_NOTEBOOK_STAGE` |
 | Snowsight notebook | `<DB>.NOTEBOOKS.<DOMAIN>_DEMO` |
 | Cortex agent | `<domain>` (lowercase) |
+
+## Snowflake security harness
+
+> Filled in during intake step 3 (bootstrap). The role + DB created here are
+> the only Snowflake objects the agent ever touches outside of the demo
+> itself. See CLAUDE.md > "Snowflake security harness" for the full model.
+
+- **Bootstrap SQL run:** `data/00_bootstrap.sql` (committed to the repo for
+  review). Run on: _date_ as: _profile default role_ against: _account_.
+- **Demo role:** `RAI_DEMO_<DOMAIN_UPPER>`. Granted to user
+  _CURRENT_USER_ and to ROLE SYSADMIN.
+- **Demo database:** `PK_<DOMAIN_UPPER>`, owned by the demo role.
+- **RelationalAI Native App:** _app name_. Granted application roles:
+  _list of app role names_.
+- **Snowflake Intelligence:** `CREATE AGENT` on
+  `SNOWFLAKE_INTELLIGENCE.AGENTS` granted.
+- **Warehouse:** `RAI_XS` with `USAGE` + `OPERATE` only (no MODIFY).
+
+**Confirmed limitations of the demo role:**
+- Cannot CREATE / DROP / ALTER any user.
+- Cannot CREATE / DROP / ALTER any database, schema, table, or warehouse
+  outside `PK_<DOMAIN_UPPER>`.
+- Cannot create programmatic access tokens (PATs).
+- Cannot GRANT or REVOKE any privilege.
+- Cannot modify the RelationalAI native app or any integration.
+
+**To tear down the demo entirely** (manual, by the user, not the agent):
+```sql
+USE ROLE ACCOUNTADMIN;
+DROP DATABASE IF EXISTS PK_<DOMAIN_UPPER>;
+DROP ROLE IF EXISTS RAI_DEMO_<DOMAIN_UPPER>;
+```
 
 ## Anchored numbers
 
