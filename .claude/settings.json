@@ -135,6 +135,8 @@
       "Bash(curl -s https://raw.githubusercontent.com/RelationalAI/*)",
       "Bash(curl -s -o*)",
 
+      "Monitor",
+
       "Read(//Users/piotrkraus/rai-repos/**)",
       "Read(//Users/piotrkraus/.snowflake/connections.toml)",
       "Read(//Users/piotrkraus/rai-repos/PyRel/**)",
