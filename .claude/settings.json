@@ -167,6 +167,12 @@
       "Bash(* ; pgrep*)",
       "Bash(*; wc -l*)",
       "Bash(* ; wc -l*)",
+      "Bash(*; echo *)",
+      "Bash(* ; echo *)",
+      "Bash(*git -C /tmp/*)",
+      "Bash(*git -C /Users/piotrkraus/rai-repos/*)",
+      "Bash(*git -C ~/rai-repos/*)",
+      "Bash(*git -C /private/tmp/*)",
 
       "Bash(mkdir *)",
       "Bash(touch *)",
