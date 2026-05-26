@@ -141,8 +141,13 @@
       "Bash(ps *)",
       "Bash(ps)",
       "Bash(ps aux*)",
+      "Bash(ps -eo*)",
+      "Bash(ps -ef*)",
       "Bash(pgrep *)",
       "Bash(pgrep)",
+      "Bash(wc -l*)",
+      "Bash(wc -l * ; ps *)",
+      "Bash(wc -l * ; pgrep *)",
 
       "Bash(mkdir *)",
       "Bash(touch *)",
