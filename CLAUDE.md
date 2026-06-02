@@ -453,12 +453,23 @@ move to the next phase. Don't paper over a failure with a comment. Don't
 iterations to land green; yours will too.
 
 When a notebook cell fails in Snowsight but works locally, the culprit is
-usually one of: missing change tracking on a table, a stale stage upload
-(re-run the `snow stage copy` step), the `_build_config()` not detecting
-the Snowsight session (Snowsight needs `ConfigFromActiveSession`, local
-needs `create_config()` - your Phase 3 `_build_config()` must handle both),
-or a Plotly figure width/height that Jupyter accepts but Snowsight
-rejects.
+usually one of: the first `pip install relationalai` cell failing because
+the notebook has no PyPI external access integration attached (set
+`EXTERNAL_ACCESS_INTEGRATIONS = (PYPI_ACCESS_INTEGRATION)` in the
+`CREATE OR REPLACE NOTEBOOK` - see Phase 6); missing change tracking on a
+table; a stale stage upload (re-run the `snow stage copy` step); the
+`_build_config()` not detecting the Snowsight session (Snowsight needs
+`ConfigFromActiveSession`, local needs `create_config()` - your Phase 3
+`_build_config()` must handle both); or a Plotly figure width/height that
+Jupyter accepts but Snowsight rejects. For headless `snow notebook execute`
+specifically, the notebook also needs a `COMPUTE_POOL` set (interactive
+open provisions one automatically; headless does not).
+
+When a Cortex agent deploys and answers from the CLI but is missing from
+the Snowflake Intelligence picker, it was deployed to `<DB>.RAI_AGENT`
+instead of `SNOWFLAKE_INTELLIGENCE.AGENTS`. The picker only lists agents in
+the SI schema. Set `agent_schema="SNOWFLAKE_INTELLIGENCE.AGENTS"` and
+redeploy (see Phase 7).
 
 Document any failure you fix in `BRIEF.md` under "Design decisions" so
 the next session inherits the gotcha.

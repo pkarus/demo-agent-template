@@ -440,12 +440,29 @@ them and produces a Plotly figure for each.
    - Notebook: `<DB>.NOTEBOOKS.<DOMAIN>_DEMO`
    - Files: notebook + `<domain>.py` + `demo_queries.py` under a subfolder
      so Snowsight's Files view shows them as a workspace.
-4. `snow notebook execute <DB>.NOTEBOOKS.<DOMAIN>_DEMO` to run it remotely
-   and verify it works in Snowsight too.
+   - **Attach a PyPI external access integration in the `CREATE OR REPLACE
+     NOTEBOOK` statement:** `EXTERNAL_ACCESS_INTEGRATIONS =
+     (PYPI_ACCESS_INTEGRATION)`. The first cell does `pip install
+     relationalai` (it is not on Snowflake's Anaconda channel), and a fresh
+     container kernel has **no PyPI egress without this** - cell 0 dies with
+     `CalledProcessError ... pip install ... relationalai returned non-zero
+     exit status 1`. `CREATE OR REPLACE` does NOT carry over a UI-set
+     integration, so it must be in the statement or every redeploy silently
+     re-breaks the install. See `airplanes_demo/prep_demo.py` (the
+     `CREATE OR REPLACE NOTEBOOK` block).
+4. To verify headless via `snow notebook execute`, the notebook also needs a
+   **compute pool** (`ALTER NOTEBOOK ... SET COMPUTE_POOL = '<pool>'`, e.g.
+   `NOTEBOOK_CPU_XS`). Interactive Snowsight provisions a runtime on open;
+   headless `EXECUTE NOTEBOOK` does not and errors with "Notebook runtime is
+   set, but no compute pool is specified to run in." Then
+   `snow notebook execute <DB>.NOTEBOOKS.<DOMAIN>_DEMO` runs it remotely.
 
 **Exit criteria.**
 - The notebook is uploaded and visible in Snowsight Files at
   `<DB>.NOTEBOOKS.<DOMAIN>_DEMO`.
+- The notebook has `EXTERNAL_ACCESS_INTEGRATIONS = (PYPI_ACCESS_INTEGRATION)`
+  (confirm with `DESCRIBE NOTEBOOK`) so the `pip install relationalai` cell
+  works on a fresh container.
 - `snow notebook execute --role RAI_DEMO_<DOMAIN> <DB>.NOTEBOOKS.<DOMAIN>_DEMO`
   runs it **end-to-end without errors**. Every cell green.
 - **Manually open the notebook in Snowsight and re-run all cells** once.
@@ -476,16 +493,36 @@ demo questions in natural language inside Snowsight.
    visualise this as a bar / scatter / etc.".
 3. Configure:
    - Agent name: `<domain>` (lowercase)
-   - Database: `<DB>` (the demo database)
-   - Schema: `RAI_AGENT`
+   - Database: `<DB>` (the demo database) - holds the tool **sprocs**
+   - Schema: `RAI_AGENT` - holds the tool sprocs
+   - **`agent_schema = "SNOWFLAKE_INTELLIGENCE.AGENTS"`** - the agent object
+     MUST live here. The Snowflake Intelligence picker only lists agents in
+     `SNOWFLAKE_INTELLIGENCE.AGENTS`; an agent deployed to `<DB>.RAI_AGENT`
+     works from the CLI but **never appears in the SI picker**, which is the
+     surface the audience uses. Set `AGENT_SCHEMA` in `agent/deploy.py`
+     accordingly (see `airplanes_demo/agent/deploy.py`). The sprocs still go
+     to `<DB>.RAI_AGENT`; only the agent object moves.
    - Warehouse: `RAI_XS`
-4. `.venv/bin/python -m agent.deploy deploy` to register.
+4. `.venv/bin/python -m agent.deploy deploy` to register. Then grant the agent
+   so the audience's role sees it in the picker:
+   `GRANT USAGE ON AGENT SNOWFLAKE_INTELLIGENCE.AGENTS.<domain> TO ROLE
+   <the role the audience uses>` (match how other SI agents on the account are
+   granted - usually `PUBLIC`). The viewer's role also needs USAGE on the data
+   schema and the `RAI_AGENT` sprocs, or chat returns tool errors even though
+   the agent is listed.
 5. Smoke test: `.venv/bin/python -m agent.deploy chat "What's the answer to question 1?"`. Round-trip should be ~60-90 s warm.
 6. Test each demo question via chat. Expect 60-90 s for rules / graph /
    heuristic; 2-3 min for prescriptive (the LP solve dominates).
 
 **Exit criteria.**
 - `.venv/bin/python -m agent.deploy status` reports the agent deployed.
+- **The agent appears in the Snowflake Intelligence picker.** Confirm it is
+  in the SI schema: `SHOW AGENTS IN SCHEMA SNOWFLAKE_INTELLIGENCE.AGENTS`
+  lists `<domain>`, and `USE ROLE <audience role>; SHOW AGENTS IN SCHEMA
+  SNOWFLAKE_INTELLIGENCE.AGENTS` still lists it (visibility under the role
+  that will actually demo). A passing CLI `chat` does NOT prove this - the
+  CLI bypasses the picker. This is the check that catches the
+  "agent-in-the-wrong-schema" failure.
 - **All N demo questions answer correctly** via `chat`. Run each one
   explicitly: `.venv/bin/python -m agent.deploy chat "<question>"`.
   Each must return the expected DataFrame shape and at least one
